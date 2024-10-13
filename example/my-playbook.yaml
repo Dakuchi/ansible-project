@@ -1,0 +1,14 @@
+---
+- name: Configure nginx web server
+  hosts: localhost
+  tasks:
+  - name: install nginx server
+    apt:
+        name: nginx=1.18.0-6ubuntu14
+        state: latest
+    become: yes
+  - name: start nginx
+    service:
+        name: nginx
+        state: started
+    become: yes

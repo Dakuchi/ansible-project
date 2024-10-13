@@ -1,0 +1,24 @@
+---
+- name: Configure nginx web server
+  hosts: localhost
+  tasks:
+  - name: stop nginx
+    service:
+        name: nginx
+        state: stopped
+    become: yes
+  - name: uninstall nginx server
+    apt:
+        name:
+          - nginx
+          - nginx-common
+          - nginx-core
+          - libnginx-mod-http-geoip2
+          - libnginx-mod-http-image-filter
+          - libnginx-mod-http-xslt-filter
+          - libnginx-mod-mail
+          - libnginx-mod-stream
+          - libnginx-mod-stream-geoip2
+        state: absent
+        purge: yes
+    become: yes
