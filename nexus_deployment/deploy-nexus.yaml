@@ -1,21 +1,29 @@
 ---
-# Install Java 8 and net-tools
+# Install Java 11 and net-tools
 - name: Install java and net-tools
   hosts: my-instance
   become: True
   tasks: 
     - name: Update apt repo and cache
       apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
-    - name: Install Java 8
-      apt: name=openjdk-8-jre-headless
+    - name: Install Java 11
+      apt: name=openjdk-11-jre-headless
     - name: Install net-tools
       apt: name=net-tools
+    - name: Configure alternatives to use Java 11
+      command: update-alternatives --set java /usr/lib/jvm/java-11-openjdk-amd64/bin/java
 
 # Download and unpack Nexus    
 - name: Download and unpack Nexus
   hosts: my-instance
   become: True
   tasks:
+    # Check new nexus folder name existing
+    - name: Check if nexus folder status
+      stat:
+        path: /opt/nexus
+      register: stat_result
+    - debug: msg={{stat_result.stat.exists}}
     # Download Nexus
     - name: Download Nexus
       get_url:
@@ -29,6 +37,7 @@
         src: "{{download_result.dest}}"
         dest: /opt/
         remote_src: True
+      when: not stat_result.stat.exists
     # Find nexus folder
     - name: Find Nexus folder
       find:
@@ -36,14 +45,8 @@
         pattern: "nexus-*"
         file_type: directory
       register: find_result
-    - debug: msg={{find_result}}
-    # Check new nexus folder name existing
-    - name: Check if nexus folder status
-      stat:
-        path: /opt/nexus
-      register: stat_result
-    - debug: msg={{stat_result}}
-    # Rename nexus folder name from nexus-x.xx.x-y to nexus from find module result
+    - debug: msg={{find_result.files[0].path}}
+    # Rename nexus folder name from "nexus-x.yy.z-..."" to "nexus" from find module result
     - name: Rename Nexus folder
       shell: mv {{find_result.files[0].path}} /opt/nexus
       when: not stat_result.stat.exists
@@ -51,6 +54,7 @@
 # Create nexus user
 - name: Create nexus user to own nexus folders
   hosts: my-instance
+  become: True
   tasks:
     # Create nexus group if not existed
     - name: Ensure group nexus exists
@@ -79,15 +83,30 @@
         group: nexus
         recurse: True
 
-#- name: Start nexus with nexus user
-#  hosts: my-instance
-#  tasks:
-#    - name: Set run_as_user nexus
-#      blockinfile:
-#        path: /opt/nexus/bin/nexus.rc
-#        block: |
-#            run_as_user="nexus"
-#      lineinfile:
-#        path: /opt/nexus/bin/nexus.rc
-#        block: |
-#            run_as_user="nexus"
+# Start nexus by user nexus
+- name: Start nexus with nexus user
+  hosts: my-instance
+  become: True
+  become_user: nexus
+  tasks:
+    # Update the nexus.rc to run_as_user "nexus"
+    - name: Set run_as_user nexus
+      lineinfile:
+        path: /opt/nexus/bin/nexus.rc
+        regexp: '^#run_as_user=""'
+        line: run_as_user="nexus"
+    # Start the nexus
+    - name: Start nexus
+      command: /opt/nexus/bin/nexus start
+    # Get nexus status
+    - name: Verify the nexus is running
+      shell: ps aux | grep nexus
+      register: app_status
+    - debug: msg={{app_status.stdout_lines}}
+    - name: Wait one minute
+      pause:
+        minutes: 1
+    - name: Check with netstat
+      shell: netstat -lnpt
+      register: app_status
+    - debug: msg={{app_status.stdout_lines}}
