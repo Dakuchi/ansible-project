@@ -1,0 +1,61 @@
+---
+# Install nodejs, npm and acl
+- name: Install node and npm
+  hosts: my-instance
+  become: True
+  tasks:
+    - name: Update apt repo and cache
+      apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+    - name: Install nodejs, npm and acl
+      apt:
+        pkg:
+          - nodejs
+          - npm
+          - acl
+
+# Create new admin user
+- name: Create new Linux user
+  hosts: my-instance
+  become: True
+  vars_files:
+    - project-vars
+  tasks:
+    - name: Create Linux user
+      user:
+        name: "{{linux_name}}"
+        comment: "{{linux_name}} admin"
+        group: google-sudoers
+      register: create_user_result
+    - debug: msg={{create_user_result}}
+
+# Deploy nodejs app with new user
+- name: Deploy nodejs app
+  hosts: my-instance
+  vars_files:
+    - project-vars
+  become: True
+  become_user: "{{linux_name}}"
+  tasks:
+    # Copy nodejs file from local machine to remote machine
+    - name: Copy and unpack the nodejs tar file
+      unarchive:
+        src: "{{location}}/nodejs-app-{{version}}.tgz"
+        dest: "{{user_home_dir}}"
+      register: unarchive_result
+    - debug: msg={{unarchive_result}}
+    # Install nodejs dependencies
+    - name: Install dependencies
+      npm:
+        path: "{{user_home_dir}}/node-js-app/app/"
+    # Start nodejs app
+    - name: Start the application
+      command:
+        chdir: "{{user_home_dir}}/node-js-app/app/"
+        cmd: node server.js
+      async: 1000
+      poll: 0
+    # Get app status
+    - name: Ensure the app is running
+      shell: ps aux | grep node
+      register: app_status
+    - debug: msg={{app_status.stdout_lines}}
