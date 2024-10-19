@@ -1,4 +1,4 @@
-version: 1.0.0
-location: /home/jayce
-linux_name: dat
+version      : 1.0.0
+location     : /home/jayce
+linux_name   : dat
 user_home_dir: /home/{{linux_name}}
