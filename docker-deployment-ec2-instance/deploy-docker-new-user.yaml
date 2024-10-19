@@ -1,0 +1,112 @@
+---
+- name: Wait for ssh connection
+  hosts: all
+  #gather_facts: False
+  tasks:
+    - name: Ensure ssh port open
+      wait_for:
+        port: 22
+        delay: 10
+        timeout: 100
+        search_regex: OpenSSH
+        host: '{{ (ansible_ssh_host|default(ansible_host))|default(inventory_hostname) }}'
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: /usr/bin/python
+
+- name: Install python3, docker
+  hosts: all
+  become: True
+  #gather_facts: False
+  tasks:
+    - name: Make sure python3 and docker are installed
+      vars:
+        ansible_python_interpreter: /usr/bin/python
+      yum:
+        name: 
+          - python3
+          - docker
+        update_cache: True
+        state: present
+
+- name: Downgrade urllib3 version
+  hosts: all
+  become: True
+  tasks:
+    - name: Uninstall the existing urllib3 package
+      pip:
+        name: urllib3
+        state: absent
+
+    - name: Install urllib3 version 1.26.7
+      pip:
+        name: urllib3==1.26.7
+
+- name: Install docker-compose
+  hosts: all
+  become: True
+  tasks:
+    - name: Install docker-compose
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.29.6/docker-compose-Linux-{{lookup('pipe', 'uname -m')}}
+        dest: /usr/local/bin/docker-compose
+        mode: +x
+
+- name: Start docker deamon
+  hosts: all
+  become: True
+  tasks:
+    - name: Ensure docker is running
+      systemd:
+        name: docker
+        state: started
+
+- name: Install docker python module
+  hosts: all
+  become: True
+  tasks:
+      - name: Install docker python module
+        pip:
+          name:
+            - docker
+            - docker-compose
+
+- name: Create new linux user
+  hosts: all
+  become: True
+  tasks:
+    - name: Create new linux user
+      user: 
+        name: jayce
+        groups: adm,docker
+  
+- name: Test docker pull
+  hosts: all
+  become: True
+  become_user: jayce
+  tasks:
+    - name: Pull redis image
+      docker_image:
+        name: redis
+        source: pull
+
+- name: Start docker containers
+  hosts: all
+  become: True
+  become_user: jayce
+  vars_files:
+    - project-vars
+  tasks:
+    - name: Copy docker compose
+      copy:
+        src: /home/jayce/ansible/docker-deployment-ec2-instance/docker-compose-full.yaml
+        dest: /home/jayce/docker-compose.yaml
+    - name: Docker login
+      docker_login:
+        registry_url: "{{ lookup('env', 'DOCKER_REGISTRY') }}"
+        username: "{{ lookup('env', 'DOCKER_USERNAME') }}"
+        password: "{{ lookup('env', 'DOCKER_PASSWORD') }}"
+    - name: Start container from compose
+      docker_compose:
+        project_src: /home/jayce
+        state: present # docker-compose up
